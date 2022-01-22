@@ -1,0 +1,41 @@
+{
+    "name": "weatherwatcher",
+    "version": "1.0.0",
+    "description": "watches the weather",
+    "type": "module",
+    "exports": "./dist/index.js",
+    "engines": {
+        "node": "^17.3.0"
+    },
+    "dependencies": {
+        "better-sqlite3": "^7.5.0",
+        "cors": "^2.8.5",
+        "croner": "^4.0.83",
+        "express": "^4.17.2",
+        "dotenv": "^10.0.0",
+        "got": "^12.0.0"
+    },
+    "scripts": {
+        "postinstall": "tsc",
+        "tsc": "tsc",
+        "dev": "export NODE_ENV=dev && node -r dotenv/config dist/index.js",
+        "devv": "export NODE_ENV=dev && tsc && node -r dotenv/config dist/index.js",
+        "prod": "export NODE_ENV=production && node -r dotenv/config dist/index.js"
+    },
+    "author": "Zach",
+    "license": "MIT",
+    "devDependencies": {
+        "@types/better-sqlite3": "^7.4.2",
+        "@types/cors": "^2.8.12",
+        "@types/express": "^4.17.13",
+        "@types/node": "^17.0.6",
+        "@types/node-cron": "^3.0.0",
+        "@typescript-eslint/eslint-plugin": "^5.8.1",
+        "@typescript-eslint/parser": "^5.8.1",
+        "eslint": "^8.6.0",
+        "eslint-config-airbnb-base": "^15.0.0",
+        "eslint-import-resolver-typescript": "^2.5.0",
+        "eslint-plugin-import": "^2.25.3",
+        "typescript": "^4.5.4"
+    }
+}

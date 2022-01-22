@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS request_times (
+    zip TEXT PRIMARY KEY,
+    time INTEGER NOT NULL
+) WITHOUT ROWID;

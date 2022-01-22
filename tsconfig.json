@@ -1,0 +1,27 @@
+{
+   "compilerOptions": {
+      "incremental": true,
+      "target": "esnext",
+      "module": "ES2020",
+      "lib": ["esnext"],
+      // generates .js.map files, set true to use the debugger
+      "sourceMap": false,
+      "outDir": "./dist",
+      "strict": true,
+      "noImplicitAny": true,
+      "strictNullChecks": true,
+      "alwaysStrict": true,
+      "noUnusedLocals": true,
+      "noUnusedParameters": true,
+      "noImplicitReturns": true,
+      "noFallthroughCasesInSwitch": true,
+      "esModuleInterop": true,
+      "moduleResolution": "node"
+   },
+   "include": [
+      "./src/**/*"
+   ],
+   "exclude": [
+      "typings"
+   ]
+}
