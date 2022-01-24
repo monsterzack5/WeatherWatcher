@@ -4,7 +4,7 @@ import { checkENVVars } from './utils/checkENVVars.js';
 import { Logger } from './utils/logger.js';
 import weatherRouter from './routes/weather.js';
 import { db } from './utils/database.js';
-import { updateHomeWeatherHandler } from './jobs/updateCurrentWeather.js';
+import { updateHomeWeatherHandler } from './jobs/updateLocalWeather.js';
 
 if (!checkENVVars()) {
     Logger.warn('FATAL: ENV Vars are not properly set!');

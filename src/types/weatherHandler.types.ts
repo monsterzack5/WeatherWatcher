@@ -44,10 +44,12 @@ export interface DBRequestTime {
 }
 
 export interface DBAstronomy {
+    date: string;
     sunrise: number;
     sunset: number;
     moonrise:number;
     moonset:number;
     moon_phase: number;
     moon_illumination: number;
+    zip: string;
 }

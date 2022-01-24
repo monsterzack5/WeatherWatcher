@@ -45,8 +45,7 @@ CREATE TABLE IF NOT EXISTS air_quality (
 );
 
 CREATE TABLE IF NOT EXISTS astronomy (
-    _uid INTEGER PRIMARY KEY AUTOINCREMENT,
-    epoch INTEGER NOT NULL,
+    date TEXT PRIMARY KEY,
     sunrise TEXT NOT NULL,
     sunset TEXT NOT NULL,
     moonrise TEXT NOT NULL,
@@ -57,4 +56,4 @@ CREATE TABLE IF NOT EXISTS astronomy (
     zip INTEGER NOT NULL,
     
     FOREIGN KEY (zip) REFERENCES location(zip)
-);
+) WITHOUT ROWID;

@@ -1,15 +1,17 @@
 import got from 'got';
 import { Logger } from './logger.js';
-import { db, memDb } from './database.js';
+import { db } from './database.js';
 
-import type { APIAstronomy, Weather } from '../types/weather.types';
+import type {
+    APIAstronomy, APILocation, APIWeather, ReturnedWeather,
+} from '../types/weather.types';
 import {
-    DBAirQuality, DBAstronomy, DBLocation, DBRequestTime, DBWeather, doesRowExist,
+    DBAirQuality, DBAstronomy, DBLocation, DBWeather, doesRowExist,
 } from '../types/weatherHandler.types.js';
 
 const baseUrl = 'https://api.weatherapi.com/v1/';
 
-/* Main DB */
+/* DB Calls */
 const insertCurrentWeatherWithZip = db.prepare(
     `INSERT INTO weather (epoch, temp_f, is_day, condition, wind_mph, wind_degree, 
         pressure_mb, precip_mm, humidity, cloudy, feels_like_f, visablity_miles, uv, gust_mph,
@@ -23,13 +25,9 @@ const insertAirQualityWithZip = db.prepare(`INSERT INTO air_quality (epoch, co, 
     pm10, us_epa_index, gb_defra_index, zip)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
-const insertAstronomyWithZip = db.prepare(`INSERT INTO astronomy (epoch, sunrise, sunset, moonrise, moonset, 
+const insertAstronomyWithZip = db.prepare(`INSERT INTO astronomy (date, sunrise, sunset, moonrise, moonset, 
     moon_phase, moon_illumination, zip)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-
-const existsWeatherOnZipAndEpoch = db.prepare(
-    'SELECT EXISTS (SELECT 1 FROM weather WHERE epoch = ? AND zip = ? LIMIT 1)',
-);
 
 const existsLocationWithZip = db.prepare('SELECT EXISTS (SELECT 1 FROM location WHERE zip = ? LIMIT 1)');
 
@@ -39,62 +37,17 @@ const selectLocationFromZip = db.prepare('SELECT * FROM location WHERE zip = ?')
 
 const selectAirQualityFromEpochAndZip = db.prepare('SELECT * FROM air_quality WHERE epoch = ? AND zip = ?');
 
-const selectAstronomyFromEpochAndZip = db.prepare('SELECT * FROM astronomy WHERE epoch = ? AND zip = ?');
+const selectAstroFromDateAndZip = db.prepare('SELECT * FROM astronomy WHERE date = ? AND zip = ?');
 
-/* Inmemory DB */
+/* End DB Calls */
 
-const updateLastRequestTime = memDb.prepare('INSERT OR REPLACE INTO request_times (zip, time) VALUES (?, ?)');
-
-const selectLastRequestTimeOnZip = memDb.prepare('SELECT * FROM request_times WHERE zip = ?');
-
-function isCurrentWeatherSaved(lastUpdatedEpoch: number, zip: string): boolean {
-    const doesExist: doesRowExist = existsWeatherOnZipAndEpoch.get(lastUpdatedEpoch, zip);
-    return Object.values(doesExist)[0];
-}
-
-function isLocationSaved(zip: string): boolean {
-    const isSaved: doesRowExist = existsLocationWithZip.get(zip);
-    return Object.values(isSaved)[0];
-}
-
-function saveLocation(name: string, lat: number, lon: number, zip: string): void {
-    insertLocationWithZip.run(name, lat, lon, zip);
-}
-
-function stripCurrentWeather(weather: Weather): Weather {
-    const w = weather;
-
-    delete w.location.country;
-    delete w.location.region;
-    delete w.location.tz_id;
-    delete w.location.localtime_epoch;
-    delete w.location.localtime;
-
-    delete w.current.last_updated;
-    delete w.current.temp_c;
-    delete w.current.wind_kph;
-    delete w.current.wind_dir;
-    delete w.current.pressure_in;
-    delete w.current.precip_in;
-    delete w.current.feelslike_c;
-    delete w.current.vis_km;
-    delete w.current.gust_kph;
-
-    delete w.current.astronomy?.Location;
-
-    return w;
-}
-
-function convertDBWeatherToCurrentWeather(weather: DBWeather, zip: string): Weather {
-    const locationInfo: DBLocation = selectLocationFromZip.get(weather.zip);
-    const airQualitytInfo: DBAirQuality = selectAirQualityFromEpochAndZip.get(weather.epoch, zip);
-    const astronomyInfo: DBAstronomy = selectAstronomyFromEpochAndZip.get(weather.epoch, zip);
-
+function createReturnableWeather(weather: DBWeather, astro: DBAstronomy, location: DBLocation, airQuality: DBAirQuality)
+    : ReturnedWeather {
     return {
         location: {
-            name: locationInfo.name,
-            lat: locationInfo.lat,
-            lon: locationInfo.lon,
+            name: location.name,
+            lat: location.lat,
+            lon: location.lon,
         },
         current: {
             last_updated_epoch: weather.epoch,
@@ -114,80 +67,39 @@ function convertDBWeatherToCurrentWeather(weather: DBWeather, zip: string): Weat
             uv: weather.uv,
             gust_mph: weather.gust_mph,
             air_quality: {
-                co: airQualitytInfo.co,
-                no2: airQualitytInfo.no2,
-                o3: airQualitytInfo.o3,
-                so2: airQualitytInfo.so2,
-                pm2_5: airQualitytInfo.pm2_5,
-                pm10: airQualitytInfo.pm10,
-                'us-epa-index': airQualitytInfo.us_epa_index,
-                'gb-defra-index': airQualitytInfo.gb_defra_index,
+                co: airQuality.co,
+                no2: airQuality.no2,
+                o3: airQuality.o3,
+                so2: airQuality.so2,
+                pm2_5: airQuality.pm2_5,
+                pm10: airQuality.pm10,
+                'us-epa-index': airQuality.us_epa_index,
+                'gb-defra-index': airQuality.gb_defra_index,
             },
             astronomy: {
                 astro: {
-                    sunrise: astronomyInfo.sunrise,
-                    sunset: astronomyInfo.sunset,
-                    moonrise: astronomyInfo.moonrise,
-                    moonset: astronomyInfo.moonset,
-                    moon_phase: astronomyInfo.moon_phase,
-                    moon_illumination: astronomyInfo.moon_illumination,
+                    sunrise: astro.sunrise,
+                    sunset: astro.sunset,
+                    moonrise: astro.moonrise,
+                    moonset: astro.moonset,
+                    moon_phase: astro.moon_phase,
+                    moon_illumination: astro.moon_illumination,
                 },
             },
         },
     };
 }
 
-function saveCurrentWeather(w: Weather, zipCode: string): void {
-    // check if we have the location saved, if not save it first
-    if (!isLocationSaved(zipCode)) {
-        saveLocation(w.location.name, w.location.lat, w.location.lon, zipCode);
+function saveLocationIfNeeded(zipCode: string, location: APILocation): void {
+    const isSaved: doesRowExist = existsLocationWithZip.get(zipCode);
+    if (!Object.values(isSaved)[0]) {
+        insertLocationWithZip.run(location.name, location.lat, location.lon, zipCode);
     }
+}
 
-    if (w.current.air_quality) {
-        insertAirQualityWithZip.run(
-            w.current.last_updated_epoch,
-            w.current.air_quality.co,
-            w.current.air_quality.no2,
-            w.current.air_quality.o3,
-            w.current.air_quality.so2,
-            w.current.air_quality.pm2_5,
-            w.current.air_quality.pm10,
-            w.current.air_quality['us-epa-index'],
-            w.current.air_quality['gb-defra-index'],
-            zipCode,
-        );
-    }
-
-    if (w.current.astronomy) {
-        insertAstronomyWithZip.run(
-            w.current.last_updated_epoch,
-            w.current.astronomy.astro.sunrise,
-            w.current.astronomy.astro.sunset,
-            w.current.astronomy.astro.moonrise,
-            w.current.astronomy.astro.moonset,
-            w.current.astronomy.astro.moon_phase,
-            w.current.astronomy.astro.moon_illumination,
-            zipCode,
-        );
-    }
-
-    insertCurrentWeatherWithZip.run(
-        w.current.last_updated_epoch,
-        w.current.temp_f,
-        w.current.is_day,
-        w.current.condition.text,
-        w.current.wind_mph,
-        w.current.wind_degree,
-        w.current.pressure_mb,
-        w.current.precip_mm,
-        w.current.humidity,
-        w.current.cloud,
-        w.current.feelslike_f,
-        w.current.vis_miles,
-        w.current.uv,
-        w.current.gust_mph,
-        zipCode,
-    );
+// Returns a YYYY-MM-DD formated string.
+function getISODate(): string {
+    return new Date().toISOString().split('T')[0];
 }
 
 async function getJSON<T>(url: string): Promise<T | void> {
@@ -204,47 +116,150 @@ async function getJSON<T>(url: string): Promise<T | void> {
     }
 }
 
-export async function getCurrentWeather(zipCode: string): Promise<Weather | void> {
-    // Check to see if the last request was within 10 minutes
-    const lastRequestTime: DBRequestTime = selectLastRequestTimeOnZip.get(zipCode);
-    if (lastRequestTime && Date.now() - lastRequestTime.time <= 10 * 60 * 1000) {
-        // if so, return weather from db.
-        const latestEntry: DBWeather = selectNewestWeatherEntryEpoch.get();
-        return convertDBWeatherToCurrentWeather(latestEntry, zipCode);
-    }
+// This function should only try to update the weather in the DB.
+export async function updateCurrentWeather(zipCode: string): Promise<boolean> {
+    try {
+        const weather = await getJSON<APIWeather>(`current.json?key=${process.env.WEATHER_API_KEY}&q=${zipCode}&aqi=yes`);
 
-    updateLastRequestTime.run(zipCode, Date.now());
-
-    const weather = await getJSON<Weather>(`current.json?key=${process.env.WEATHER_API_KEY}&q=${zipCode}&aqi=yes`);
-
-    // if the API told us to get bent, check to see if its in the DB
-    if (!weather) {
-        // Check if stored weather info is within ~15 minutes from now..\\
-        const latestEntry: DBWeather = selectNewestWeatherEntryEpoch.get();
-        if (Date.now() - latestEntry.epoch <= 15 * 60 * 1000) {
-            // Latest data is within 15 minutes, convert then return it.
-            return convertDBWeatherToCurrentWeather(latestEntry, zipCode);
+        if (!weather || !weather.current || !weather.current.air_quality) {
+            return false;
         }
-        // We tried our best.
-        return undefined;
+
+        saveLocationIfNeeded(zipCode, weather.location);
+
+        // WeatherAPI.com returns the epoch in seconds, So convert it to milliseconds for ease of use.
+        weather.current.last_updated_epoch *= 1000;
+        insertCurrentWeatherWithZip.run(
+            weather.current.last_updated_epoch,
+            weather.current.temp_f,
+            weather.current.is_day,
+            weather.current.condition.text,
+            weather.current.wind_mph,
+            weather.current.wind_degree,
+            weather.current.pressure_mb,
+            weather.current.precip_mm,
+            weather.current.humidity,
+            weather.current.cloud,
+            weather.current.feelslike_f,
+            weather.current.vis_miles,
+            weather.current.uv,
+            weather.current.gust_mph,
+            zipCode,
+        );
+
+        insertAirQualityWithZip.run(
+            weather.current.last_updated_epoch,
+            weather.current.air_quality.co,
+            weather.current.air_quality.no2,
+            weather.current.air_quality.o3,
+            weather.current.air_quality.so2,
+            weather.current.air_quality.pm2_5,
+            weather.current.air_quality.pm10,
+            weather.current.air_quality['us-epa-index'],
+            weather.current.air_quality['gb-defra-index'],
+            zipCode,
+        );
+    } catch (e) {
+        Logger.error('weatherHandler::updateCurrentWeather', e as Error);
+        return false;
     }
-
-    // WeatherAPI returns the epoch in seconds, but we want to treat it as if it were milliseconds.
-    weather.current.last_updated_epoch *= 1000;
-
-    // If we already have it saved, just pass it along
-    if (isCurrentWeatherSaved(weather.current.last_updated_epoch, zipCode)) {
-        return stripCurrentWeather(weather);
-    }
-
-    // Convert the current day into YYYY-MM-DD format
-    const formatedDate = new Date().toISOString().split('T')[0];
-    const astro = await getJSON<APIAstronomy>(`astronomy.json?key=${process.env.WEATHER_API_KEY}&q=${zipCode}&dt=${formatedDate}`);
-
-    if (astro) {
-        weather.current.astronomy = astro.astronomy;
-    }
-
-    saveCurrentWeather(weather, zipCode);
-    return stripCurrentWeather(weather);
+    return true;
 }
+
+// Deplication is prohibited by sqlite via using the formatedDate as a Primary Key
+// Though, we should not rely on this.
+export async function updateCurrentAstronomy(zipCode: string): Promise<boolean> {
+    // Convert the current day into YYYY-MM-DD format
+    const formatedDate = getISODate();
+    try {
+        const currentAstro = await getJSON<APIAstronomy>(`astronomy.json?key=${process.env.WEATHER_API_KEY}&q=${zipCode}&dt=${formatedDate}`);
+
+        if (!currentAstro || !currentAstro.astronomy || !currentAstro.location) {
+            return false;
+        }
+
+        saveLocationIfNeeded(zipCode, currentAstro.location);
+        insertAstronomyWithZip.run(
+            formatedDate,
+            currentAstro.astronomy.astro.sunrise,
+            currentAstro.astronomy.astro.sunset,
+            currentAstro.astronomy.astro.moonrise,
+            currentAstro.astronomy.astro.moonset,
+            currentAstro.astronomy.astro.moon_phase,
+            currentAstro.astronomy.astro.moon_illumination,
+            zipCode,
+        );
+    } catch (e) {
+        Logger.error('weatherHander::updateCurrentAstro', e as Error);
+        return false;
+    }
+    return true;
+}
+
+export async function getCurrentWeather(zipCode: string): Promise<ReturnedWeather | void> {
+    let latestWeather: DBWeather = selectNewestWeatherEntryEpoch.get();
+
+    // Weather in the DB is older than 10 minutes, lets update it.
+    if (!latestWeather || Date.now() - latestWeather.epoch >= (10 * 60 * 1000)) {
+        await updateCurrentWeather(zipCode);
+        latestWeather = selectNewestWeatherEntryEpoch.get();
+    }
+
+    // If no astro data is returned, it is outdated.
+    const formatedDate = getISODate();
+    let latestAstro: DBAstronomy = selectAstroFromDateAndZip.get(formatedDate, zipCode);
+
+    if (!latestAstro) {
+        await updateCurrentAstronomy(zipCode);
+        latestAstro = selectAstroFromDateAndZip.get(formatedDate, zipCode);
+    }
+
+    const location: DBLocation = selectLocationFromZip.get(zipCode);
+    const airQuality: DBAirQuality = selectAirQualityFromEpochAndZip.get(latestWeather.epoch, zipCode);
+
+    return createReturnableWeather(latestWeather, latestAstro, location, airQuality);
+}
+// export async function getCurrentWeather(zipCode: string): Promise<Weather | void> {
+// Check to see if the last request was within 10 minutes
+// const lastRequestTime: DBRequestTime = selectLastRequestTimeOnZip.get(zipCode);
+// if (lastRequestTime && Date.now() - lastRequestTime.time <= 10 * 60 * 1000) {
+// if so, return weather from db.
+// const latestEntry: DBWeather = selectNewestWeatherEntryEpoch.get();
+// return convertDBWeatherToCurrentWeather(latestEntry, zipCode);
+// }
+
+// updateLastRequestTime.run(zipCode, Date.now());
+
+// const weather = await getJSON<Weather>(`current.json?key=${process.env.WEATHER_API_KEY}&q=${zipCode}&aqi=yes`);
+
+// // if the API told us to get bent, check to see if its in the DB
+// if (!weather) {
+//     // Check if stored weather info is within ~15 minutes from now..\\
+//     const latestEntry: DBWeather = selectNewestWeatherEntryEpoch.get();
+//     if (Date.now() - latestEntry.epoch <= 15 * 60 * 1000) {
+//         // Latest data is within 15 minutes, convert then return it.
+//         return convertDBWeatherToCurrentWeather(latestEntry, zipCode);
+//     }
+//     // We tried our best.
+//     return undefined;
+// }
+
+// // WeatherAPI returns the epoch in seconds, but we want to treat it as if it were milliseconds.
+// weather.current.last_updated_epoch *= 1000;
+
+// If we already have it saved, just pass it along
+// if (isCurrentWeatherSaved(weather.current.last_updated_epoch, zipCode)) {
+// return stripCurrentWeather(weather);
+// }
+
+// Convert the current day into YYYY-MM-DD format
+// const formatedDate = new Date().toISOString().split('T')[0];
+// const astro = await getJSON<APIAstronomy>(`astronomy.json?key=${process.env.WEATHER_API_KEY}&q=${zipCode}&dt=${formatedDate}`);
+
+// if (astro) {
+// weather.current.astronomy = astro.astronomy;
+// }
+
+// saveCurrentWeather(weather, zipCode);
+// return stripCurrentWeather(weather);
+// }

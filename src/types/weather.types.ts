@@ -1,12 +1,18 @@
-export interface Location {
+export interface APILocation {
     name: string;
-    region?: string;
-    country?: string;
+    region: string;
+    country: string;
     lat: number;
     lon: number;
-    tz_id?: string;
-    localtime_epoch?: number;
-    localtime?: string;
+    tz_id: string;
+    localtime_epoch: number;
+    localtime: string;
+}
+
+export interface ReturnedLocation {
+    name: string;
+    lat: number;
+    lon: number;
 }
 
 export interface Condition {
@@ -27,8 +33,8 @@ export interface AirQuality {
 }
 
 export interface APIAstronomy {
-    astronomy: {
-        Location?: Location;
+    location?: APILocation;
+    astronomy?: {
         astro: {
             sunrise: number;
             sunset: number;
@@ -40,45 +46,64 @@ export interface APIAstronomy {
     }
 }
 
-export interface Astronomy {
-    Location?: Location;
+export interface ReturnedAstronomy {
     astro: {
         sunrise: number;
         sunset: number;
-        moonrise:number;
-        moonset:number;
+        moonrise: number;
+        moonset: number;
         moon_phase: number;
         moon_illumination: number;
     }
 }
 
-export interface Weather {
-    location: Location,
+export interface APIWeather {
+    location: APILocation,
     current: {
         last_updated_epoch: number;
-        last_updated?: string;
-        temp_c?: number;
+        last_updated: string;
+        temp_c: number;
         temp_f: number;
         is_day: boolean;
         condition: Condition;
         wind_mph: number;
-        wind_kph?: number;
+        wind_kph: number;
         wind_degree: number;
-        wind_dir?: string;
+        wind_dir: string;
         pressure_mb: number;
-        pressure_in?: number;
+        pressure_in: number;
         precip_mm: number;
-        precip_in?: number;
+        precip_in: number;
         humidity: number;
         cloud: number;
-        feelslike_c?: number;
+        feelslike_c: number;
         feelslike_f: number;
-        vis_km?: number;
+        vis_km: number;
         vis_miles: number;
         uv: number;
         gust_mph: number;
-        gust_kph?: number;
-        air_quality?: AirQuality;
-        astronomy? : Astronomy;
+        gust_kph: number;
+        air_quality: AirQuality;
+    }
+}
+export interface ReturnedWeather {
+    location: ReturnedLocation,
+    current: {
+        last_updated_epoch: number;
+        temp_f: number;
+        is_day: boolean;
+        condition: Condition;
+        wind_mph: number;
+        wind_degree: number;
+        pressure_mb: number;
+        precip_mm: number;
+        humidity: number;
+        cloud: number;
+        feelslike_f: number;
+        vis_miles: number;
+        uv: number;
+        gust_mph: number;
+        air_quality: AirQuality;
+        astronomy : ReturnedAstronomy;
     }
 }
